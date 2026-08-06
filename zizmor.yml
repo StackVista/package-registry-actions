@@ -1,6 +1,0 @@
-rules:
-  github-env:
-    ignore:
-      # codeartifact-auth writes only a $RUNNER_TEMP path to GITHUB_ENV — not the token
-      # and not any attacker-influenced input.
-      - action.yml

@@ -30,7 +30,16 @@ runs:
         CODEARTIFACT_DOMAIN_OWNER: ${{ inputs.domain-owner }}
         CODEARTIFACT_REGION: ${{ inputs.region }}
         CODEARTIFACT_REPOSITORY: ${{ inputs.repository }}
-      run: |
+      run: | # zizmor: ignore[github-env] only a $RUNNER_TEMP path is written, not attacker-influenced
+        # repository is interpolated into a filename and the Ivy realm; only these two values are valid CodeArtifact repos.
+        case "${CODEARTIFACT_REPOSITORY}" in
+          packages|packages-snapshot) ;;
+          *)
+            echo "::error::repository must be 'packages' or 'packages-snapshot', got '${CODEARTIFACT_REPOSITORY}'" >&2
+            exit 1
+            ;;
+        esac
+
         # Ivy matches CodeArtifact's 401 challenge: `Basic realm="<domain>/<repository>"` at the
         # bare hostname. Neither realm nor host may carry the /maven/ path.
         credentials_host="${CODEARTIFACT_DOMAIN}-${CODEARTIFACT_DOMAIN_OWNER}.d.codeartifact.${CODEARTIFACT_REGION}.amazonaws.com"
