@@ -1,0 +1,65 @@
+name: CodeArtifact auth
+description: >-
+  Fetch a CodeArtifact authorization token and write it to a 0600 credentials file for
+  sbt/Ivy/Coursier, exporting only the containing directory path. Assumes the caller has
+  already configured AWS credentials.
+
+inputs:
+  domain:
+    description: CodeArtifact domain name.
+    required: true
+  domain-owner:
+    description: AWS account ID owning the CodeArtifact domain.
+    required: true
+  region:
+    description: AWS region the domain lives in.
+    required: true
+  repository:
+    description: >-
+      The single CodeArtifact repository this job may publish to (`packages` or
+      `packages-snapshot`). A credential is written for this repository only.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Write CodeArtifact publish credentials
+      shell: bash --noprofile --norc -euo pipefail {0}
+      env:
+        CODEARTIFACT_DOMAIN: ${{ inputs.domain }}
+        CODEARTIFACT_DOMAIN_OWNER: ${{ inputs.domain-owner }}
+        CODEARTIFACT_REGION: ${{ inputs.region }}
+        CODEARTIFACT_REPOSITORY: ${{ inputs.repository }}
+      run: | # zizmor: ignore[github-env] only a $RUNNER_TEMP path is written, not attacker-influenced
+        # repository is interpolated into a filename and the Ivy realm; only these two values are valid CodeArtifact repos.
+        case "${CODEARTIFACT_REPOSITORY}" in
+          packages|packages-snapshot) ;;
+          *)
+            echo "::error::repository must be 'packages' or 'packages-snapshot', got '${CODEARTIFACT_REPOSITORY}'" >&2
+            exit 1
+            ;;
+        esac
+
+        # Ivy matches CodeArtifact's 401 challenge: `Basic realm="<domain>/<repository>"` at the
+        # bare hostname. Neither realm nor host may carry the /maven/ path.
+        credentials_host="${CODEARTIFACT_DOMAIN}-${CODEARTIFACT_DOMAIN_OWNER}.d.codeartifact.${CODEARTIFACT_REGION}.amazonaws.com"
+
+        auth_token="$(aws codeartifact get-authorization-token \
+          --domain "${CODEARTIFACT_DOMAIN}" \
+          --domain-owner "${CODEARTIFACT_DOMAIN_OWNER}" \
+          --region "${CODEARTIFACT_REGION}" \
+          --query authorizationToken --output text)"
+        echo "::add-mask::${auth_token}"
+
+        # The token is domain-scoped, so scope it by realm instead: with no `<domain>/packages`
+        # entry, a snapshot build cannot answer a release-repository challenge at all.
+        credentials_file="${RUNNER_TEMP}/codeartifact-${CODEARTIFACT_REPOSITORY}.credentials"
+        install -m 600 /dev/null "${credentials_file}"
+        printf '%s\n' \
+          "realm=${CODEARTIFACT_DOMAIN}/${CODEARTIFACT_REPOSITORY}" \
+          "host=${credentials_host}" \
+          'user=aws' \
+          "password=${auth_token}" \
+          > "${credentials_file}"
+
+        echo "CODEARTIFACT_CREDENTIALS_DIR=${RUNNER_TEMP}" >> "$GITHUB_ENV"
