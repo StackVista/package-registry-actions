@@ -31,9 +31,8 @@ runs:
         CODEARTIFACT_REGION: ${{ inputs.region }}
         CODEARTIFACT_REPOSITORY: ${{ inputs.repository }}
       run: |
-        # Ivy matches credentials on the realm and host from CodeArtifact's 401 challenge, which is
-        # `Basic realm="<domain>/<repository>"` at the bare hostname. Neither may carry the /maven/
-        # path, and the realm is unrelated to the resolver name in publishTo.
+        # Ivy matches CodeArtifact's 401 challenge: `Basic realm="<domain>/<repository>"` at the
+        # bare hostname. Neither realm nor host may carry the /maven/ path.
         credentials_host="${CODEARTIFACT_DOMAIN}-${CODEARTIFACT_DOMAIN_OWNER}.d.codeartifact.${CODEARTIFACT_REGION}.amazonaws.com"
 
         auth_token="$(aws codeartifact get-authorization-token \
@@ -43,10 +42,8 @@ runs:
           --query authorizationToken --output text)"
         echo "::add-mask::${auth_token}"
 
-        # The token is domain-scoped, so it authenticates both repositories. Write a credential for
-        # only the one this ref may publish to: Ivy sends credentials per matched realm, so a
-        # snapshot build that carries no `<domain>/packages` realm entry cannot answer a challenge
-        # from the release repository at all. The build reads whichever files exist.
+        # The token is domain-scoped, so scope it by realm instead: with no `<domain>/packages`
+        # entry, a snapshot build cannot answer a release-repository challenge at all.
         credentials_file="${RUNNER_TEMP}/codeartifact-${CODEARTIFACT_REPOSITORY}.credentials"
         install -m 600 /dev/null "${credentials_file}"
         printf '%s\n' \
