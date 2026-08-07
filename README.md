@@ -1,7 +1,8 @@
 # package-registry-actions
 
 Shared composite actions for authenticating to the SUSE Observability AWS CodeArtifact
-package registry. Consumed by every Maven publisher in the org.
+package registry — the per-repository *publish* credential, and the org-wide read-only
+*proxy* credential every dependency-resolving build needs.
 
 ## `codeartifact-auth`
 
@@ -41,3 +42,25 @@ Pin by full commit SHA with a trailing version comment.
 The build side of the contract — reading `CODEARTIFACT_CREDENTIALS_DIR` — lives in
 `stackstate-sbt-build`'s `Authorizations.codeArtifactPublishCredentials`. See
 [CodeArtifact Package Registry Configuration](https://github.com/StackVista/stackstate-mission-control/blob/main/wiki/concepts/codeartifact-package-registry-configuration.md).
+
+## `package-registry-proxy-auth`
+
+Writes the shared read-only proxy credential to a `0600` credentials file under `$RUNNER_TEMP`,
+exporting its path as `PACKAGE_REGISTRY_PROXY_CREDENTIALS_FILE`. The token never becomes a step
+output and never enters the build's process environment.
+
+```yaml
+- name: Authenticate to the package registry proxy
+  uses: StackVista/package-registry-actions/.github/actions/package-registry-proxy-auth@<sha> # v1
+  with:
+    username: ${{ vars.PACKAGE_REGISTRY_PROXY_USER }}
+    token: ${{ secrets.PACKAGE_REGISTRY_PROXY_TOKEN }}
+```
+
+Both inputs are required and must be non-empty, so a job with an unset org variable fails here
+rather than at a `401` from the proxy.
+
+The proxy host and realm are constants in the action, matching the proxy URLs being build
+constants — a per-caller override could only ever disagree with them. This is the CI half of the
+developer `~/.sbt/packages-registry-proxy.credentials` convention, so the build reads one
+credentials file in both cases and needs no environment-variable path at all.
