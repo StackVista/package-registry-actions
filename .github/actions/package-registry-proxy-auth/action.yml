@@ -10,6 +10,14 @@ inputs:
   token:
     description: Package registry proxy token.
     required: true
+  maven-settings:
+    description: >-
+      Also contribute Maven `<server>` entries for the two proxy read routes to a shared
+      settings.xml, exported as MAVEN_SETTINGS_FILE for `mvn -s`. The ids are `central`
+      and `packages-snapshot-proxy`; a pom must use those for its proxy repositories.
+      Leave false for sbt.
+    required: false
+    default: 'false'
 
 runs:
   using: composite
@@ -38,3 +46,13 @@ runs:
           > "${credentials_file}"
 
         echo "PACKAGE_REGISTRY_PROXY_CREDENTIALS_FILE=${credentials_file}" >> "$GITHUB_ENV"
+
+    - name: Add proxy credentials to Maven settings
+      if: inputs.maven-settings == 'true'
+      shell: bash --noprofile --norc -euo pipefail {0}
+      run: | # zizmor: ignore[github-env] only a $RUNNER_TEMP path is written, not attacker-influenced
+        # Server ids are constants for the same reason host and realm are: the proxy URLs are
+        # build constants, so a per-caller id could only ever disagree with the pom.
+        "${GITHUB_ACTION_PATH}/../_maven-settings/write-maven-settings.sh" \
+          "${RUNNER_TEMP}/packages-registry-proxy.credentials" \
+          central packages-snapshot-proxy
