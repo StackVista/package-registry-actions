@@ -19,6 +19,19 @@ inputs:
       The single CodeArtifact repository this job may publish to (`packages` or
       `packages-snapshot`). A credential is written for this repository only.
     required: true
+  maven-settings:
+    description: >-
+      Also contribute a Maven `<server>` entry to a shared settings.xml, exported as
+      MAVEN_SETTINGS_FILE for `mvn -s`. The server id is the repository name, so a pom's
+      `distributionManagement` repository must use that same id. Leave false for sbt.
+    required: false
+    default: 'false'
+  netrc:
+    description: >-
+      Also append a `machine` entry for the CodeArtifact host to `~/.netrc`, for pip, twine
+      and `curl --netrc`. Leave false for sbt and Maven.
+    required: false
+    default: 'false'
 
 runs:
   using: composite
@@ -63,3 +76,22 @@ runs:
           > "${credentials_file}"
 
         echo "CODEARTIFACT_CREDENTIALS_DIR=${RUNNER_TEMP}" >> "$GITHUB_ENV"
+
+    - name: Add CodeArtifact credentials to Maven settings
+      if: inputs.maven-settings == 'true'
+      shell: bash --noprofile --norc -euo pipefail {0}
+      env:
+        CODEARTIFACT_REPOSITORY: ${{ inputs.repository }}
+      run: | # zizmor: ignore[github-env] only a $RUNNER_TEMP path is written, not attacker-influenced
+        "${GITHUB_ACTION_PATH}/../_maven-settings/write-maven-settings.sh" \
+          "${RUNNER_TEMP}/codeartifact-${CODEARTIFACT_REPOSITORY}.credentials" \
+          "${CODEARTIFACT_REPOSITORY}"
+
+    - name: Add CodeArtifact credentials to ~/.netrc
+      if: inputs.netrc == 'true'
+      shell: bash --noprofile --norc -euo pipefail {0}
+      env:
+        CODEARTIFACT_REPOSITORY: ${{ inputs.repository }}
+      run: |
+        "${GITHUB_ACTION_PATH}/../_netrc/append-netrc.sh" \
+          "${RUNNER_TEMP}/codeartifact-${CODEARTIFACT_REPOSITORY}.credentials"

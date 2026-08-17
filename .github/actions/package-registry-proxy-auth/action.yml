@@ -1,0 +1,71 @@
+name: Package registry proxy auth
+description: >-
+  Write the shared read-only package registry proxy credential to a 0600 credentials file
+  for sbt/Ivy/Coursier, exporting only the file path.
+
+inputs:
+  username:
+    description: Package registry proxy username.
+    required: true
+  token:
+    description: Package registry proxy token.
+    required: true
+  maven-settings:
+    description: >-
+      Also contribute Maven `<server>` entries for the two proxy read routes to a shared
+      settings.xml, exported as MAVEN_SETTINGS_FILE for `mvn -s`. The ids are `central`
+      and `packages-snapshot-proxy`; a pom must use those for its proxy repositories.
+      Leave false for sbt.
+    required: false
+    default: 'false'
+  netrc:
+    description: >-
+      Also append a `machine` entry for the proxy host to `~/.netrc`, for pip, twine and
+      `curl --netrc`. Leave false for sbt.
+    required: false
+    default: 'false'
+
+runs:
+  using: composite
+  steps:
+    - name: Write package registry proxy credentials
+      shell: bash --noprofile --norc -euo pipefail {0}
+      env:
+        PROXY_USER: ${{ inputs.username }}
+        PROXY_TOKEN: ${{ inputs.token }}
+      run: | # zizmor: ignore[github-env] only a $RUNNER_TEMP path is written, not attacker-influenced
+        if [[ -z "${PROXY_USER}" || -z "${PROXY_TOKEN}" ]]; then
+          echo "::error::username and token must both be non-empty" >&2
+          exit 1
+        fi
+        echo "::add-mask::${PROXY_TOKEN}"
+
+        # Host and realm are constants, not inputs: the proxy URL is a build constant too, so a
+        # per-caller override could only ever disagree with it. Realm is the proxy's 401 challenge.
+        credentials_file="${RUNNER_TEMP}/packages-registry-proxy.credentials"
+        install -m 600 /dev/null "${credentials_file}"
+        printf '%s\n' \
+          'realm=Packages Registry Proxy' \
+          'host=packages.tooling.stackstate.io' \
+          "user=${PROXY_USER}" \
+          "password=${PROXY_TOKEN}" \
+          > "${credentials_file}"
+
+        echo "PACKAGE_REGISTRY_PROXY_CREDENTIALS_FILE=${credentials_file}" >> "$GITHUB_ENV"
+
+    - name: Add proxy credentials to Maven settings
+      if: inputs.maven-settings == 'true'
+      shell: bash --noprofile --norc -euo pipefail {0}
+      run: | # zizmor: ignore[github-env] only a $RUNNER_TEMP path is written, not attacker-influenced
+        # Server ids are constants for the same reason host and realm are: the proxy URLs are
+        # build constants, so a per-caller id could only ever disagree with the pom.
+        "${GITHUB_ACTION_PATH}/../_maven-settings/write-maven-settings.sh" \
+          "${RUNNER_TEMP}/packages-registry-proxy.credentials" \
+          central packages-snapshot-proxy
+
+    - name: Add proxy credentials to ~/.netrc
+      if: inputs.netrc == 'true'
+      shell: bash --noprofile --norc -euo pipefail {0}
+      run: |
+        "${GITHUB_ACTION_PATH}/../_netrc/append-netrc.sh" \
+          "${RUNNER_TEMP}/packages-registry-proxy.credentials"
