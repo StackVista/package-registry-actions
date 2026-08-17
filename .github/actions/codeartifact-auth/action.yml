@@ -26,6 +26,12 @@ inputs:
       `distributionManagement` repository must use that same id. Leave false for sbt.
     required: false
     default: 'false'
+  netrc:
+    description: >-
+      Also append a `machine` entry for the CodeArtifact host to `~/.netrc`, for pip, twine
+      and `curl --netrc`. Leave false for sbt and Maven.
+    required: false
+    default: 'false'
 
 runs:
   using: composite
@@ -80,3 +86,12 @@ runs:
         "${GITHUB_ACTION_PATH}/../_maven-settings/write-maven-settings.sh" \
           "${RUNNER_TEMP}/codeartifact-${CODEARTIFACT_REPOSITORY}.credentials" \
           "${CODEARTIFACT_REPOSITORY}"
+
+    - name: Add CodeArtifact credentials to ~/.netrc
+      if: inputs.netrc == 'true'
+      shell: bash --noprofile --norc -euo pipefail {0}
+      env:
+        CODEARTIFACT_REPOSITORY: ${{ inputs.repository }}
+      run: |
+        "${GITHUB_ACTION_PATH}/../_netrc/append-netrc.sh" \
+          "${RUNNER_TEMP}/codeartifact-${CODEARTIFACT_REPOSITORY}.credentials"

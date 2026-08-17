@@ -4,7 +4,33 @@ Shared composite actions for authenticating to the SUSE Observability AWS CodeAr
 package registry — the per-repository *publish* credential, and the org-wide read-only
 *proxy* credential every dependency-resolving build needs.
 
-## `codeartifact-auth`
+## For developers
+
+Publishing of artifacts can only be done from Github workflows, not from any local machine. However, to 
+be able to build any of our code you need access to the package-registry-proxy. We use a proxy to have local (for our workflows) caching and to avoid the annoying authentication mechanism for AWS CodeArtifacts. 
+
+Configuration for SBT and Gradle local builds (we're configuring Gradle to look for the same SBT credentials file, so no need to copy). Create the `~/.sbt/packages-registry-proxy.credentials` with this contents (insert your username and password as described in the [credentials section](#proxy-credentials)):
+
+```
+realm=Packages Registry Proxy
+host=packages.tooling.stackstate.io
+user=<username>
+password=<password>
+```
+
+### Proxy credentials
+
+If you don't have credentials yet for the GitLab Proxy follow these instructions:
+* Think of a new password and store that safely (for example in your Bitwarden vault) and put it into the configuration files for SBT and gradle
+* Your username is the first part of your SUSE mail address, for example for `remco.beckers@suse.com` the username is `remco.beckers`.
+* Use `openssl passwd -apr1` and input your new password to generate a hash
+* Email it to vladimir.iliakov@suse.com in the following format: <login>:<generated hash>, for example:
+`remco.beckers:$apr1$mA6m50K0$npoYrA/LsDRRqXgZ1P3VH1`
+* Vladimir will add you to the proxy user list
+
+## For Github workflows
+
+### `codeartifact-auth`
 
 Fetches a short-lived CodeArtifact authorization token and writes it to a `0600` credentials
 file under `$RUNNER_TEMP`, exporting only the containing directory as
@@ -43,7 +69,7 @@ The build side of the contract — reading `CODEARTIFACT_CREDENTIALS_DIR` — li
 `stackstate-sbt-build`'s `Authorizations.codeArtifactPublishCredentials`. See
 [CodeArtifact Package Registry Configuration](https://github.com/StackVista/stackstate-mission-control/blob/main/wiki/concepts/codeartifact-package-registry-configuration.md).
 
-## `package-registry-proxy-auth`
+### `package-registry-proxy-auth`
 
 Writes the shared read-only proxy credential to a `0600` credentials file under `$RUNNER_TEMP`,
 exporting its path as `PACKAGE_REGISTRY_PROXY_CREDENTIALS_FILE`. The token never becomes a step
@@ -64,3 +90,19 @@ The proxy host and realm are constants in the action, matching the proxy URLs be
 constants — a per-caller override could only ever disagree with them. This is the CI half of the
 developer `~/.sbt/packages-registry-proxy.credentials` convention, so the build reads one
 credentials file in both cases and needs no environment-variable path at all.
+
+### Other credential formats
+
+Both actions write the sbt/Ivy/Coursier credentials file by default, and can additionally emit
+the same credential in two other formats:
+
+| input | writes | for |
+| --- | --- | --- |
+| `maven-settings: true` | `settings.xml`, path exported as `MAVEN_SETTINGS_FILE` | `mvn -s "$MAVEN_SETTINGS_FILE"` |
+| `netrc: true` | a `machine` entry appended to `~/.netrc` | `pip`, `pip-compile`, `twine`, `curl --netrc`, `git` |
+
+Both are additive, so the CodeArtifact and proxy actions can each contribute their entries in
+the same job, in either order. Nothing needs to be passed to the consuming tool for netrc
+beyond `curl`'s `--netrc`; the rest read `~/.netrc` on their own. When writing a `pip.conf`,
+emit the index URL only and leave the credential in netrc — see
+[CI credential patterns](https://github.com/StackVista/stackstate-mission-control/blob/main/wiki/concepts/ci-credentials.md).
