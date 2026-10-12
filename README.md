@@ -102,7 +102,12 @@ the same credential in two other formats:
 | `netrc: true` | a `machine` entry appended to `~/.netrc` | `pip`, `pip-compile`, `twine`, `curl --netrc`, `git` |
 
 Both are additive, so the CodeArtifact and proxy actions can each contribute their entries in
-the same job, in either order. Nothing needs to be passed to the consuming tool for netrc
+the same job, in either order.
+
+Each Maven `<server>` declares its credential's host in `<repositoryOrigins>`. Maven 3.10 only
+sends a server's credentials to its origins, and it defaults `central` to Maven Central, so
+without them the proxy gets anonymous requests. Maven 3.9 doesn't know the element and logs a
+harmless settings warning. Nothing needs to be passed to the consuming tool for netrc
 beyond `curl`'s `--netrc`; the rest read `~/.netrc` on their own. When writing a `pip.conf`,
 emit the index URL only and leave the credential in netrc — see
 [CI credential patterns](https://github.com/StackVista/stackstate-mission-control/blob/main/wiki/concepts/ci-credentials.md).
