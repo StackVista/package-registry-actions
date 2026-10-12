@@ -33,22 +33,26 @@ xml_escape() {
   sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' -e 's/"/\&quot;/g' -e "s/'/\&apos;/g"
 }
 
+host="$(sed -n 's/^host=//p' "${credentials_file}" | xml_escape)"
 user="$(sed -n 's/^user=//p' "${credentials_file}" | xml_escape)"
 password="$(sed -n 's/^password=//p' "${credentials_file}" | xml_escape)"
 
-if [[ -z "${user}" || -z "${password}" ]]; then
-  echo "::error::${credentials_file} carries no user/password line" >&2
+if [[ -z "${host}" || -z "${user}" || -z "${password}" ]]; then
+  echo "::error::${credentials_file} carries no host/user/password line" >&2
   exit 1
 fi
 
 # The runner masks the raw token; the escaped form is a different string and needs its own mask.
 echo "::add-mask::${password}"
 
+# Maven 3.10 sends a server's credentials only to its declared origins, and `central` defaults
+# to repo.maven.apache.org, so without this the proxy gets anonymous requests and answers 401.
+# Maven 3.9 ignores the element with a settings warning.
 for server_id in "$@"; do
   fragment="${settings_dir}/${server_id}.xml"
   install -m 600 /dev/null "${fragment}"
-  printf '    <server>\n      <id>%s</id>\n      <username>%s</username>\n      <password>%s</password>\n    </server>\n' \
-    "${server_id}" "${user}" "${password}" > "${fragment}"
+  printf '    <server>\n      <id>%s</id>\n      <username>%s</username>\n      <password>%s</password>\n      <repositoryOrigins>\n        <repositoryOrigin>https://%s</repositoryOrigin>\n      </repositoryOrigins>\n    </server>\n' \
+    "${server_id}" "${user}" "${password}" "${host}" > "${fragment}"
 done
 
 install -m 600 /dev/null "${settings_file}"
